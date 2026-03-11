@@ -15,7 +15,7 @@ from db_utils import DB_CONFIGS, set_active_db, list_nonempty_tables
 from llm_utils import generate_sql_json, execute_with_autofix, extract_json
 from n8n_utils import log_event
 from session_manager import require_auth, get_current_user, logout_user
-from auth_db_utils import get_user_databases
+from auth_db_utils import get_user_databases, add_query_history
 
 # Load keys
 load_dotenv()
@@ -179,6 +179,7 @@ Return JSON only:
 # ---------------------------
 def auto_plot_main(df: pd.DataFrame, user_question: str):
     """LLM-chosen single chart with high-contrast colors + readable text."""
+    fig = None
     if df.empty:
         st.warning("⚠️ Empty result; no chart.")
         return
@@ -328,9 +329,11 @@ Return ONLY JSON:
         )
 
         st.plotly_chart(fig, use_container_width=True)
+        return fig
 
     except Exception as e:
         st.error(f"Chart rendering failed: {e}")
+        return None
 
 
 # ---------------------------
@@ -541,7 +544,18 @@ if run_btn or sql_only_btn:
         st.dataframe(df_main, use_container_width=True)
 
         st.markdown("### 📊 Main Visualization")
-        auto_plot_main(df_main, user_q)
+        fig_obj = auto_plot_main(df_main, user_q)
+
+        # Save to history
+        if current_user:
+            viz_json = fig_obj.to_json() if fig_obj else None
+            add_query_history(
+                user_id=current_user['user_id'],
+                database_name=db_choice,
+                question=user_q,
+                sql_query=final_sql,
+                viz_json=viz_json
+            )
 
         log_event("success", {"question": user_q, "sql": final_sql, "rows": len(df_main)})
 

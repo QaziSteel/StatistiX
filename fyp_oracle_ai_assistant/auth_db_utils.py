@@ -79,18 +79,17 @@ def init_users_db(db_path: str = None) -> None:
             )
         """)
 
-        # Login audit log table
+        # Query history table
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS login_audit (
-                audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                username TEXT,
-                ip_address TEXT,
-                device_token TEXT,
-                login_status TEXT CHECK(login_status IN ('success', 'failed', 'token_expired')),
-                failure_reason TEXT,
-                logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL
+            CREATE TABLE IF NOT EXISTS query_history (
+                history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                database_name TEXT NOT NULL,
+                question TEXT,
+                sql_query TEXT,
+                viz_json TEXT, -- Serialized Plotly figure
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
             )
         """)
 
@@ -102,6 +101,7 @@ def init_users_db(db_path: str = None) -> None:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_device_tokens_token ON device_tokens(device_token)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_login_audit_user_id ON login_audit(user_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_login_audit_logged_at ON login_audit(logged_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_query_history_user_id ON query_history(user_id)")
 
         conn.commit()
     finally:
@@ -629,6 +629,76 @@ def delete_user(user_id: int, db_path: str = None) -> bool:
         cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
         conn.commit()
         return True
+    finally:
+        conn.close()
+
+
+def add_query_history(
+    user_id: int,
+    database_name: str,
+    question: str,
+    sql_query: str,
+    viz_json: str = None,
+    db_path: str = None
+) -> int:
+    """
+    Save a successful query and its visualization to history.
+
+    Args:
+        user_id: User ID
+        database_name: Database name
+        question: Natural language question
+        sql_query: The final executed SQL
+        viz_json: Serialized Plotly figure (JSON string)
+        db_path: Path to users.db
+
+    Returns:
+        New history record ID
+    """
+    if db_path is None:
+        db_path = USERS_DB_PATH
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO query_history (user_id, database_name, question, sql_query, viz_json)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, database_name, question, sql_query, viz_json))
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
+
+def get_query_history(user_id: int, limit: int = 50, db_path: str = None) -> List[Dict]:
+    """
+    Get query history for a specific user.
+
+    Args:
+        user_id: User ID
+        limit: Max records to return
+        db_path: Path to users.db
+
+    Returns:
+        List of history records as dicts
+    """
+    if db_path is None:
+        db_path = USERS_DB_PATH
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT * FROM query_history
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (user_id, limit))
+        return [dict(row) for row in cursor.fetchall()]
     finally:
         conn.close()
 
