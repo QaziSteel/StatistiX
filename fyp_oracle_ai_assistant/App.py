@@ -426,20 +426,51 @@ schema_text = schema_to_text(schema, limit_tables=80, limit_cols=80)
 
 st.subheader("📂 Database Tables")
 
+if "show_tables" not in st.session_state:
+    st.session_state.show_tables = False
+
 col_tbl1, col_tbl2 = st.columns([1, 1])
 with col_tbl1:
-    show_tables_btn = st.button("📄 Show Available Tables")
+    if st.button("📄 Show Available Tables"):
+        st.session_state.show_tables = not st.session_state.show_tables
 with col_tbl2:
     db_details_btn = st.button("📑 Database details (LLM Summary)")
 
-if show_tables_btn:
+if st.session_state.show_tables:
     tables = list_nonempty_tables()
     if not tables:
         st.warning("No non-empty tables found.")
     else:
         for name, count, cols in tables:
             with st.expander(f"{name} ({count} rows)"):
-                st.write(", ".join(cols))
+                st.write(f"**Columns:** {', '.join(cols)}")
+                
+                # Pagination
+                page_size = 100
+                total_pages = (count // page_size) + (1 if count % page_size > 0 else 0)
+                
+                if total_pages > 1:
+                    page = st.number_input(
+                        f"Page (out of {total_pages})",
+                        min_value=1,
+                        max_value=total_pages,
+                        value=1,
+                        key=f"page_{db_choice}_{name}"
+                    )
+                else:
+                    page = 1
+                
+                offset = (page - 1) * page_size
+                
+                # Fetch data for this page
+                try:
+                    paged_sql = f'SELECT * FROM "{name}" LIMIT {page_size} OFFSET {offset}'
+                    paged_rows, paged_cols = run_sql(paged_sql)
+                    paged_df = pd.DataFrame(paged_rows, columns=paged_cols)
+                    st.dataframe(paged_df, use_container_width=True)
+                    st.caption(f"Showing rows {offset + 1} to {min(offset + page_size, count)} of {count}")
+                except Exception as e:
+                    st.error(f"Failed to fetch table data: {e}")
 
 if db_details_btn:
     with st.spinner("Analyzing database contents for summary..."):
