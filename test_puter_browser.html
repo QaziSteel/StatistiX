@@ -1,0 +1,39 @@
+<html>
+<body>
+    <script src="https://js.puter.com/v2/"></script>
+    <script>
+        // Using gpt-5.2 model
+        puter.ai.chat(
+            "Write a short poem about coding",
+            { model: "gpt-5.2" }
+        ).then(response => {
+            puter.print(response);
+        });
+
+        // Using gpt-5.2-chat model
+        puter.ai.chat(
+            "Write a short poem about coding",
+            { model: "gpt-5.2-chat" }
+        ).then(response => {
+            puter.print(response);
+        });
+
+        // Using gpt-5.2-pro model
+        puter.ai.chat(
+            "Write a short poem about coding",
+            { model: "gpt-5.2-pro", driver: "openrouter" }
+        ).then(response => {
+            puter.print(response);
+        });
+
+        // Using gpt-5.1 model
+        puter.ai.chat(
+            "Write a short poem about coding",
+            { model: "gpt-5.1" }
+        ).then(response => {
+            puter.print("<h2>Using gpt-5.1 model</h2>");
+            puter.print(response);
+        });
+    </script>
+</body>
+</html>

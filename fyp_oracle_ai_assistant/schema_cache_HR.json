@@ -1,0 +1,31 @@
+{
+  "HOUSEHOLDS_MAPPED": [
+    "ID",
+    "HHID",
+    "PROVINCE",
+    "DIVISION",
+    "DISTRICT",
+    "ROOMS",
+    "CONSTRUCTIONDURATION",
+    "WALLSTYPE",
+    "ROOFSTYPE",
+    "DRINKINGWATER",
+    "LIGHTSOURCE",
+    "KITCHENFUEL"
+  ],
+  "ID_DESCRIPTION": [
+    "POPULATION_ATTRIBUTES",
+    "UNNAMED:_1"
+  ],
+  "MIGRATION": [
+    "PVID",
+    "PV",
+    "DSID",
+    "DS",
+    "BITTHDSID",
+    "BIRTHDS",
+    "BIRTHPVID",
+    "BIRTHPV",
+    "BIRTHCOUNTRY"
+  ]
+}
