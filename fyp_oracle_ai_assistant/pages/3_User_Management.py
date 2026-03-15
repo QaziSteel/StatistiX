@@ -21,7 +21,7 @@ from user_mgmt_utils import (
     get_login_audit_log,
 )
 
-st.set_page_config(page_title="User Management", page_icon="👥", layout="wide")
+
 
 # Check admin role
 require_admin("user_management_page")

@@ -22,11 +22,7 @@ GEMINI_FORECAST_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 client = genai.GenerativeModel(GEMINI_FORECAST_MODEL)
 
-st.set_page_config(
-    page_title="Vegetable Price Forecast & Analysis",
-    layout="wide",
-    page_icon="📈"
-)
+
 
 # No custom CSS → using Streamlit default theme
 

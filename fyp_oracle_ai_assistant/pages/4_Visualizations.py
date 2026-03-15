@@ -5,7 +5,7 @@ from session_manager import require_auth, get_current_user
 from auth_db_utils import get_query_history, delete_query_history
 import time
 
-st.set_page_config(page_title="Saved Visualizations", layout="wide", page_icon="📊")
+
 
 # CRITICAL: Check authentication
 require_auth("visualizations_page", required_role=None)

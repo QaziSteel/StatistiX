@@ -13,7 +13,7 @@ import os
 
 load_dotenv()
 
-st.set_page_config(page_title="FYP Oracle AI - Login", page_icon="🔐", layout="centered")
+
 
 # Initialize session
 init_session_state()
@@ -58,7 +58,7 @@ if not st.session_state.get('_auto_login_checked'):
                                 device_token=device_token
                             )
 
-                            st.switch_page("App.py")
+                            st.switch_page("main_app.py")
                 except Exception:
                     continue
     except Exception:
@@ -66,7 +66,7 @@ if not st.session_state.get('_auto_login_checked'):
 
 # If already authenticated, redirect to main app
 if st.session_state.get('authenticated'):
-    st.switch_page("App.py")
+    st.switch_page("main_app.py")
 
 st.title("🔐 FYP Oracle AI Assistant")
 st.subheader("Sign In")
@@ -164,7 +164,7 @@ with col1:
                             # Redirect to main app
                             import time
                             time.sleep(1)
-                            st.switch_page("App.py")
+                            st.switch_page("main_app.py")
 
                         else:
                             # Log failed login
@@ -233,7 +233,7 @@ with col1:
 
                                         import time
                                         time.sleep(1)
-                                        st.switch_page("App.py")
+                                        st.switch_page("main_app.py")
                                     else:
                                         # Token expired or invalid
                                         st.error("❌ Device token expired. Please sign in with username.")

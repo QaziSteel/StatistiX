@@ -143,8 +143,21 @@ def require_auth(page_name: str, required_role: Optional[str] = None) -> bool:
     # Check role if specified
     if required_role and st.session_state.role != required_role:
         st.error(f"❌ This page requires {required_role} privileges.")
-        st.switch_page("App.py")
+        st.switch_page("main_app.py")
         return False
+
+    # Hide User Management tab for non-admins gracefully
+    if st.session_state.role != 'admin':
+        st.markdown(
+            """
+            <style>
+                [data-testid="stSidebarNav"] a[href*="User_Management"] {
+                    display: none !important;
+                }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
 
     return True
 
