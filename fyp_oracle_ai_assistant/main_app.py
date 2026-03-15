@@ -9,6 +9,7 @@ import google.generativeai as genai
 from audio_recorder_streamlit import audio_recorder
 from io import BytesIO
 import tempfile
+from gtts import gTTS
 from db_utils import run_sql  # add this import at top if not already
 from db_utils import fetch_schema, schema_to_text, MAX_ROWS, SAFE_MODE
 from db_utils import DB_CONFIGS, set_active_db, list_nonempty_tables
@@ -34,14 +35,11 @@ st.title("🧠 SQL Generator")
 # Voice utils
 # ---------------------------
 def speak(text: str) -> BytesIO:
-    """Convert assistant reply text into speech (mp3 in memory)."""
+    """Convert assistant reply text into speech using gTTS (free, no API key needed)."""
     try:
-        speech = client.audio.speech.create(
-            model=os.getenv("TTS_MODEL"),
-            voice=os.getenv("TTS_VOICE"),
-            input=text
-        )
-        buf = BytesIO(speech.read())
+        tts = gTTS(text=text, lang="en", slow=False)
+        buf = BytesIO()
+        tts.write_to_fp(buf)
         buf.seek(0)
         return buf
     except Exception:
@@ -50,38 +48,61 @@ def speak(text: str) -> BytesIO:
 
 def transcribe_to_english(audio_bytes: bytes) -> dict:
     """
-    Transcribe mic audio with Whisper, auto-detect language,
-    then translate to English if needed.
+    Transcribe mic audio using Gemini's multimodal File API,
+    auto-detect language, and translate to English if needed.
     """
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        f.write(audio_bytes)
-        wav_path = f.name
-
+    wav_path = None
+    uploaded_file = None
     try:
-        with open(wav_path, "rb") as af:
-            tr = client.audio.transcriptions.create(
-                model=os.getenv("WHISPER_MODEL"),
-                file=af,
-                response_format="verbose_json"
-            )
-        raw_text = tr.text.strip()
-        detected = (getattr(tr, "language", None) or "unknown").lower()
+        # Write audio bytes to a temp WAV file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(audio_bytes)
+            wav_path = f.name
+
+        # Upload audio to Gemini File API
+        uploaded_file = genai.upload_file(wav_path, mime_type="audio/wav")
+
+        # Ask Gemini to transcribe and detect language
+        prompt = (
+            "Listen to this audio carefully. "
+            "Return ONLY a JSON object with these exact keys: "
+            "\"text_raw\" (exact transcript), "
+            "\"language\" (detected language code, e.g. 'en', 'ur', 'ar'), "
+            "\"text_en\" (English translation of the transcript, or same as text_raw if already English). "
+            "Do NOT wrap in markdown. Return raw JSON only."
+        )
+        resp = client.generate_content(
+            [uploaded_file, prompt],
+            generation_config=genai.types.GenerationConfig(temperature=0)
+        )
+        raw = resp.text.strip()
+
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw.strip())
+
+        parsed = json.loads(raw)
+        return {
+            "text_en": parsed.get("text_en", "").strip(),
+            "lang": parsed.get("language", "unknown").lower(),
+            "text_raw": parsed.get("text_raw", "").strip(),
+        }
+
     except Exception as e:
         return {"text_en": "", "lang": "error", "text_raw": f"STT failed: {e}"}
-
-    # If already English, no need to translate
-    text_en = raw_text
-    if not detected.startswith("en"):
-        try:
-            trans = client.generate_content(
-                f"Translate this into clear English, preserving table/column names.\n\n{raw_text}",
-                generation_config=genai.types.GenerationConfig(temperature=0)
-            )
-            text_en = trans.text.strip()
-        except Exception:
-            text_en = raw_text + " (translation failed)"
-
-    return {"text_en": text_en, "lang": detected, "text_raw": raw_text}
+    finally:
+        # Clean up temp file and uploaded Gemini file
+        if wav_path:
+            try:
+                os.remove(wav_path)
+            except Exception:
+                pass
+        if uploaded_file:
+            try:
+                genai.delete_file(uploaded_file.name)
+            except Exception:
+                pass
 
 
 
@@ -352,7 +373,7 @@ with st.sidebar:
     current_user = get_current_user()
     if current_user:
         st.markdown("---")
-        col_info, col_logout = st.columns([3, 1])
+        col_info, col_logout = st.columns([2, 1])
         with col_info:
             st.markdown(f"### 👤 Welcome")
             st.markdown(f"**{current_user['full_name']}**")
