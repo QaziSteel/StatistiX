@@ -718,6 +718,35 @@ def get_query_history(user_id: int, limit: int = 50, db_path: str = None) -> Lis
         conn.close()
 
 
+def delete_query_history(history_id: int, user_id: int, db_path: str = None) -> bool:
+    """
+    Delete a specific query history record for a user.
+
+    Args:
+        history_id: History record ID
+        user_id: User ID (for security, ensure user owns the record)
+        db_path: Path to users.db
+
+    Returns:
+        True if a record was actually deleted
+    """
+    if db_path is None:
+        db_path = USERS_DB_PATH
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            DELETE FROM query_history
+            WHERE history_id = ? AND user_id = ?
+        """, (history_id, user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
 def update_last_login(user_id: int, db_path: str = None) -> None:
     """
     Update user's last login timestamp.

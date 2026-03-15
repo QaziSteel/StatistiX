@@ -1,6 +1,7 @@
 import streamlit as st
 from session_manager import require_auth, get_current_user
-from auth_db_utils import get_query_history
+from auth_db_utils import get_query_history, delete_query_history
+import time
 
 st.set_page_config(page_title="SQL Query History", layout="wide", page_icon="📜")
 
@@ -34,7 +35,7 @@ for item in history:
         st.code(item['sql_query'], language="sql")
         
         # Action buttons
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
              if st.button("📋 Copy SQL to Clipboard", key=f"copy_{item['history_id']}"):
                  # Streamlit doesn't have a direct "copy to clipboard" button that works without JS components
@@ -44,5 +45,13 @@ for item in history:
              if st.button("🔄 Use this question again", key=f"reuse_{item['history_id']}"):
                  st.session_state.user_q = item['question']
                  st.success("Question copied to Home page! Navigate back to '🧠 App' to run it.")
+        with col3:
+             if st.button("🗑️ Delete", key=f"del_sql_{item['history_id']}", help="Delete this record"):
+                 if delete_query_history(item['history_id'], current_user['user_id']):
+                     st.toast("Record deleted successfully!")
+                     time.sleep(0.5)
+                     st.rerun()
+                 else:
+                     st.error("Failed to delete record.")
 
         st.markdown("---")
