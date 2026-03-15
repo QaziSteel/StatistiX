@@ -22,8 +22,10 @@ if not history:
     st.info("No query history found. Go to the main app to generate some!")
     st.stop()
 
+st.write(f"Total saved queries: **{len(history)}**")
+
 for item in history:
-    with st.expander(f"🕒 {item['created_at']} - {item['question']}", expanded=False):
+    with st.expander(f"🕒 {item['created_at']} | ID: {item['history_id']} | {item['question']}", expanded=False):
         st.caption(f"Database: {item['database_name']}")
         st.markdown("**NL Question:**")
         st.info(item['question'])

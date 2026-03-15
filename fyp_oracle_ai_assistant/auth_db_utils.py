@@ -79,6 +79,21 @@ def init_users_db(db_path: str = None) -> None:
             )
         """)
 
+        # Login audit table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS login_audit (
+                audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                username TEXT,
+                ip_address TEXT,
+                device_token TEXT,
+                login_status TEXT,
+                failure_reason TEXT,
+                logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL
+            )
+        """)
+
         # Query history table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS query_history (

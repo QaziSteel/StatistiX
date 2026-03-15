@@ -175,19 +175,24 @@ Return JSON only:
 
 
 # ---------------------------
-# Visualization (single, LLM-chosen, gradient colors)
+# Visualization (Refactored for dynamic controls)
 # ---------------------------
-def auto_plot_main(df: pd.DataFrame, user_question: str):
-    """LLM-chosen single chart with high-contrast colors + readable text."""
-    fig = None
-    if df.empty:
-        st.warning("⚠️ Empty result; no chart.")
-        return
+def auto_plot_main(df: pd.DataFrame, user_question: str, 
+                   override_chart_type=None, override_x=None, 
+                   override_y=None, override_color=None, 
+                   override_title=None, override_colorscale="Viridis",
+                   show=True):
+    """LLM-chosen chart with optional manual overrides for Title, Axes, and Color."""
+    if df is None or df.empty:
+        if show: st.warning("⚠️ Empty result; no chart.")
+        return None, None, None, None, None
 
     cols_str = ", ".join(df.columns.tolist())
     preview = df.head(10).to_dict(orient="records")
 
-    prompt = f"""
+    # Only ask LLM if we don't have overrides for the core structure
+    if not override_chart_type:
+        prompt = f"""
 You are a visualization expert.
 User question: {user_question}
 Data columns: {cols_str}
@@ -205,25 +210,23 @@ Return ONLY JSON:
   "explanation": "short reason"
 }}
 """
+        try:
+            resp = client.generate_content(
+                f"You are a JSON-only visualization assistant.\n\n{prompt}",
+                generation_config=genai.types.GenerationConfig(temperature=0)
+            )
+            chart = extract_json(resp.text)
+        except Exception as e:
+            st.warning(f"Chart suggestion failed: {e}")
+            chart = {"chart_type": "bar", "x": None, "y": None, "color": None}
+    else:
+        chart = {"chart_type": override_chart_type, "x": override_x, "y": override_y, "color": override_color}
 
-    try:
-        resp = client.generate_content(
-            f"You are a JSON-only visualization assistant.\n\n{prompt}",
-            generation_config=genai.types.GenerationConfig(temperature=0)
-        )
-        chart = extract_json(resp.text)
-    except Exception as e:
-        st.warning(f"Chart suggestion failed, fallback used: {e}")
-        chart = {"chart_type": "bar", "x": None, "y": None, "color": None, "explanation": "Fallback to bar chart"}
-
-    chart_type = chart.get("chart_type", "bar")
-    x = chart.get("x")
-    y = chart.get("y")
-    color_col = chart.get("color")
-    explanation = chart.get("explanation", "")
-
-    if explanation:
-        st.markdown(f"**{explanation}**")
+    chart_type = override_chart_type or chart.get("chart_type", "bar")
+    x = override_x or chart.get("x")
+    y = override_y or chart.get("y")
+    color_col = override_color or chart.get("color")
+    title_text = override_title or f"📊 {chart_type.title()} Visualization"
 
     # ---- sensible fallbacks ----
     if not x:
@@ -236,46 +239,26 @@ Return ONLY JSON:
         if len(num_cols):
             y = num_cols[0]
         else:
-            # fallback: count rows per x
             agg = df.groupby(x, dropna=False).size().reset_index(name="COUNT")
             df = agg
             y = "COUNT"
 
-    # choose color column for gradient if numeric
-    if not color_col:
+    if not color_col and not override_color:
         if y in df.columns and pd.api.types.is_numeric_dtype(df[y]):
             color_col = y
-        else:
-            color_col = None
 
-    # ---- plot with strong, high-contrast styling ----
+    # ---- plot ----
     try:
         if chart_type == "bar":
-            fig = px.bar(
-                df, x=x, y=y,
-                color=color_col,
-                color_continuous_scale="Viridis" if color_col else None
-            )
+            fig = px.bar(df, x=x, y=y, color=color_col, color_continuous_scale=override_colorscale)
         elif chart_type == "line":
             fig = px.line(df, x=x, y=y, markers=True)
         elif chart_type == "scatter":
-            fig = px.scatter(
-                df, x=x, y=y,
-                color=color_col,
-                color_continuous_scale="Viridis" if color_col else None
-            )
+            fig = px.scatter(df, x=x, y=y, color=color_col, color_continuous_scale=override_colorscale)
         elif chart_type == "pie":
-            fig = px.pie(
-                df, names=x, values=y,
-                hole=0.35,
-                color_discrete_sequence=px.colors.qualitative.Set3
-            )
+            fig = px.pie(df, names=x, values=y, hole=0.35)
         elif chart_type == "histogram":
-            fig = px.histogram(
-                df, x=x,
-                color=color_col,
-                color_continuous_scale="Viridis" if color_col else None
-            )
+            fig = px.histogram(df, x=x, color=color_col, color_continuous_scale=override_colorscale)
         elif chart_type == "area":
             fig = px.area(df, x=x, y=y)
         elif chart_type == "violin":
@@ -284,56 +267,48 @@ Return ONLY JSON:
             fig = px.box(df, x=x, y=y)
         elif chart_type == "heatmap":
             corr = df.corr(numeric_only=True)
-            fig = px.imshow(corr, text_auto=True, aspect="auto", color_continuous_scale="Viridis")
+            fig = px.imshow(corr, text_auto=True, color_continuous_scale=override_colorscale)
         elif chart_type == "treemap":
-            fig = px.treemap(df, path=[x], values=y, color=y, color_continuous_scale="Viridis")
+            fig = px.treemap(df, path=[x], values=y, color=y, color_continuous_scale=override_colorscale)
         else:
             fig = px.bar(df, x=x, y=y)
 
-                # 🔧 Stronger, more readable styling (axes + colorbar)
         fig.update_layout(
             template="plotly_white",
-            title=dict(
-                text="📊 Main Visualization",
-                font=dict(color="black", size=18)
-            ),
+            title=dict(text=title_text, font=dict(color="black", size=18)),
             font=dict(color="black", size=14),
+            plot_bgcolor="white", paper_bgcolor="white",
             xaxis=dict(
                 title_font=dict(color="black", size=14),
-                tickfont=dict(color="black", size=12)
+                tickfont=dict(color="black", size=12),
+                linecolor="black",
+                gridcolor="lightgrey"
             ),
             yaxis=dict(
                 title_font=dict(color="black", size=14),
-                tickfont=dict(color="black", size=12)
+                tickfont=dict(color="black", size=12),
+                linecolor="black",
+                gridcolor="lightgrey"
             ),
-            plot_bgcolor="white",
-            paper_bgcolor="white",
             legend=dict(
-                bgcolor="rgba(255,255,255,0.95)",
-                bordercolor="rgba(0,0,0,0.15)",
+                font=dict(color="black", size=12),
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor="black",
                 borderwidth=1
             )
         )
-
-        # ✅ Make colorbar (gradient legend) clearly visible
         fig.update_coloraxes(
             colorbar=dict(
-                title=dict(
-                    font=dict(color="black", size=14)
-                ),
-                tickfont=dict(color="black", size=12),
-                bgcolor="rgba(255,255,255,0.95)",
-                bordercolor="rgba(0,0,0,0.15)",
-                borderwidth=1
+                title=dict(font=dict(color="black", size=14)),
+                tickfont=dict(color="black", size=12)
             )
         )
-
-        st.plotly_chart(fig, use_container_width=True)
-        return fig
-
+        if show:
+            st.plotly_chart(fig, use_container_width=True)
+        return fig, chart_type, x, y, color_col
     except Exception as e:
         st.error(f"Chart rendering failed: {e}")
-        return None
+        return None, None, None, None, None
 
 
 # ---------------------------
@@ -504,10 +479,16 @@ Answer in plain text, 3–6 bullet points, no JSON.
             st.error(f"Failed to generate DB summary: {e}")
 
 
+
 # ---------------------------
 # Main query flow
 # ---------------------------
 st.subheader("💬 Ask your database in plain English")
+
+# Initialize session state for query persistent storage
+if "query_results" not in st.session_state:
+    st.session_state.query_results = None
+
 user_q = st.text_input(
     "Your question",
     key="user_q",
@@ -564,22 +545,69 @@ if run_btn or sql_only_btn:
         # Execute with autofix (LLM will rewrite structure if it fails)
         rows, cols, final_sql = execute_with_autofix(sql_main, user_q, schema_text, max_retries=5)
 
-        # show final SQL if changed
-        if final_sql.strip() != sql_main.strip():
-            st.info("✅ SQL was auto-fixed to run successfully:")
-            st.code(final_sql, language="sql")
+        # Update session state with results
+        st.session_state.query_results = {
+            "df": pd.DataFrame(rows, columns=cols),
+            "sql": final_sql,
+            "question": user_q,
+            "db": db_choice,
+            "history_saved": False
+        }
+        
+        # Reset customization state for new result
+        st.session_state.viz_config = {"title": f"📊 {user_q}", "colorscale": "Viridis"}
 
-        df_main = pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        st.error(f"Execution failed: {e}")
+        log_event("error", {"question": user_q, "error": str(e)})
 
-        st.success(f"✅ Query executed. Showing up to {len(df_main)} rows (cap: {MAX_ROWS}).")
-        st.dataframe(df_main, use_container_width=True)
+# ─── Render Results (Persistent from Session State) ───
+if st.session_state.query_results:
+    res = st.session_state.query_results
+    df_main = res["df"]
+    final_sql = res["sql"]
+    user_q = res["question"]
+    db_choice = res["db"]
 
-        st.markdown("### 📊 Main Visualization")
-        fig_obj = auto_plot_main(df_main, user_q)
+    st.success(f"✅ Query executed. Showing up to {len(df_main)} rows (cap: {MAX_ROWS}).")
+    st.dataframe(df_main, use_container_width=True)
 
-        # Save to history
-        if current_user:
-            viz_json = fig_obj.to_json() if fig_obj else None
+    st.markdown("### 📊 Visualization & Customization")
+    
+    with st.expander("🛠️ Customize Chart", expanded=False):
+        cust_title = st.text_input("Chart Title", value=st.session_state.viz_config.get("title", f"📊 {user_q}"))
+        
+        # Determine defaults purely from data/question without showing
+        _, def_type, def_x, def_y, def_c = auto_plot_main(df_main, user_q, show=False)
+
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            cust_type = st.selectbox("Chart Type", 
+                                    ["bar", "line", "scatter", "pie", "histogram", "box", "area", "violin", "heatmap", "treemap"],
+                                    index=["bar", "line", "scatter", "pie", "histogram", "box", "area", "violin", "heatmap", "treemap"].index(def_type) if def_type in ["bar", "line", "scatter", "pie", "histogram", "box", "area", "violin", "heatmap", "treemap"] else 0)
+            cust_x = st.selectbox("X-Axis", df_main.columns, index=list(df_main.columns).index(def_x) if def_x in df_main.columns else 0)
+        with col_c2:
+            cust_y = st.selectbox("Y-Axis", df_main.columns, index=list(df_main.columns).index(def_y) if def_y in df_main.columns else 0)
+            cust_color = st.selectbox("Color/Group By", ["None"] + list(df_main.columns), index=list(df_main.columns).index(def_c)+1 if def_c in df_main.columns else 0)
+        
+        cust_scale = st.selectbox("Color Scale", ["Viridis", "Plasma", "Inferno", "Magma", "Cividis", "Rocket", "Mako"], index=0)
+
+    # Render Final Plot
+    fig_obj, _, _, _, _ = auto_plot_main(
+        df_main, user_q, 
+        override_chart_type=cust_type,
+        override_x=cust_x,
+        override_y=cust_y,
+        override_color=None if cust_color == "None" else cust_color,
+        override_title=cust_title,
+        override_colorscale=cust_scale,
+        show=True
+    )
+
+    # Save to history & Log only once
+    if st.button("💾 Save to History", use_container_width=True):
+        if current_user and fig_obj:
+            viz_json = fig_obj.to_json()
             add_query_history(
                 user_id=current_user['user_id'],
                 database_name=db_choice,
@@ -587,9 +615,7 @@ if run_btn or sql_only_btn:
                 sql_query=final_sql,
                 viz_json=viz_json
             )
-
-        log_event("success", {"question": user_q, "sql": final_sql, "rows": len(df_main)})
-
-    except Exception as e:
-        st.error(f"Execution failed: {e}")
-        log_event("error", {"question": user_q, "error": str(e)})
+            st.success("✅ Chart and query saved to history!")
+            log_event("success", {"question": user_q, "sql": final_sql, "rows": len(df_main)})
+        else:
+            st.warning("Could not save history. Are you logged in?")

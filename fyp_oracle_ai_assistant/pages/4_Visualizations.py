@@ -24,20 +24,31 @@ if not history:
     st.info("No saved visualizations found. Go to the main app to generate some!")
     st.stop()
 
+st.write(f"Total saved visualizations: **{len(history)}**")
+
 for item in history:
-    with st.expander(f"🕒 {item['created_at']} - {item['question']}", expanded=True):
-        st.caption(f"Database: {item['database_name']}")
+    # Use a unique ID in the label to prevent Streamlit from merging expanders
+    with st.expander(f"🕒 {item['created_at']} | ID: {item['history_id']} | {item['question']}", expanded=False):
+        st.write(f"**Question:** {item['question']}")
+        st.caption(f"Database: {item['database_name']} | Timestamp: {item['created_at']}")
         
         if item['viz_json']:
             try:
-                fig_dict = json.loads(item['viz_json'])
                 fig = pio.from_json(item['viz_json'])
-                st.plotly_chart(fig, use_container_width=True)
+                # High-contrast styling for visibility (same as in App.py)
+                fig.update_layout(
+                    template="plotly_white",
+                    font=dict(color="black"),
+                    plot_bgcolor="white", paper_bgcolor="white"
+                )
+                fig.update_xaxes(tickfont=dict(color="black"), title_font=dict(color="black"))
+                fig.update_yaxes(tickfont=dict(color="black"), title_font=dict(color="black"))
+                
+                st.plotly_chart(fig, use_container_width=True, key=f"chart_hist_{item['history_id']}")
                 
                 # Download buttons
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns([1, 3])
                 with col1:
-                    # Export to HTML
                     html_bytes = fig.to_html().encode('utf-8')
                     st.download_button(
                         label="🌐 HTML",
@@ -47,19 +58,6 @@ for item in history:
                         key=f"dl_html_{item['history_id']}"
                     )
                 with col2:
-                    # Static PNG image export
-                    try:
-                        img_bytes = fig.to_image(format="png")
-                        st.download_button(
-                            label="🖼️ PNG",
-                            data=img_bytes,
-                            file_name=f"viz_{item['history_id']}.png",
-                            mime="image/png",
-                            key=f"dl_png_{item['history_id']}"
-                        )
-                    except Exception as img_err:
-                        st.error(f"Image export error: {img_err}")
-                with col3:
                     st.code(item['sql_query'], language="sql")
             except Exception as e:
                 st.error(f"Failed to render visualization: {e}")
