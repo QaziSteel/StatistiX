@@ -10,7 +10,8 @@ import plotly.graph_objects as go
 from dotenv import load_dotenv
 import google.generativeai as genai
 from sklearn.metrics import mean_absolute_error, mean_squared_error
-from session_manager import require_auth
+from session_manager import require_auth, get_current_user
+from auth_db_utils import add_query_history
 from forecasting_models import run_forecast, get_model
 
 # CRITICAL: Check authentication before rendering anything
@@ -28,6 +29,8 @@ client = genai.GenerativeModel(GEMINI_FORECAST_MODEL)
 
 st.title("📈 Price Forecasting & Analysis")
 st.markdown("Upload your monthly price data • Ask questions • Generate forecasts")
+
+current_user = get_current_user()
 
 # ─── Core Functions ────────────────────────────────────────────────────────
 
@@ -382,10 +385,8 @@ if df is not None and profile is not None and run_btn:
             )
 
             title = f"{comm_u or 'Selected Commodity'} in {city_u or 'All Areas'}"
-            st.subheader(f"Forecast Result: {title} ({model})")
-
-            # Historical trend
-            st.markdown("### Historical Price Trend")
+            
+            # Historical trend chart generator
             fig_hist = px.line(ts, title=None)
             fig_hist.update_traces(line=dict(width=2.5))
             fig_hist.update_layout(
@@ -393,10 +394,8 @@ if df is not None and profile is not None and run_btn:
                 xaxis_title="Date",
                 yaxis_title="Price (PKR)"
             )
-            st.plotly_chart(fig_hist, use_container_width=True)
-
-            # Forecast plot
-            st.markdown("### Forecast with 95% Confidence Interval")
+            
+            # Forecast chart generator
             fig = go.Figure()
 
             fig.add_trace(go.Scatter(x=ts.index, y=ts, name="Historical Data", line=dict(width=2.5)))
@@ -418,23 +417,21 @@ if df is not None and profile is not None and run_btn:
                 height=600
             )
 
-            st.plotly_chart(fig, use_container_width=True)
-
-            # Metrics
-            st.markdown("### Model Performance")
-            cols = st.columns(3)
-            cols[0].metric("MAE (Test)", f"{metrics['MAE']:.2f}")
-            cols[1].metric("RMSE (Test)", f"{metrics['RMSE']:.2f}")
-            cols[2].metric("Training Points", f"{metrics['n_train']:,}")
-
-            # Download
+            # Download CSV Data
             csv_data = fc.to_csv(index=True).encode('utf-8')
-            st.download_button(
-                label="⬇️ Download Forecast CSV",
-                data=csv_data,
-                file_name=f"forecast_{comm_u or 'all'}_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
+
+            # Save to Session State to prevent disappearing on Save click
+            st.session_state.fc_results = {
+                "title": title,
+                "model": model,
+                "fig_hist": fig_hist,
+                "fig": fig,
+                "metrics": metrics,
+                "csv_data": csv_data,
+                "h": h,
+                "comm_u": comm_u,
+                "city_u": city_u
+            }
 
             # Clean plan
             st.session_state.fc_plan = None
@@ -442,4 +439,61 @@ if df is not None and profile is not None and run_btn:
         except Exception as e:
             st.error(f"Forecast execution failed: {str(e)}")
             st.session_state.fc_chat.append({"role": "assistant", "content": f"⚠️ Error during forecast: {str(e)}"})
+
+# ─── Render Forecast Results ───────────────────────────────────────────────
+if "fc_results" in st.session_state:
+    res = st.session_state.fc_results
+    
+    st.subheader(f"Forecast Result: {res['title']} ({res['model']})")
+
+    # Historical trend
+    st.markdown("### Historical Price Trend")
+    st.plotly_chart(res['fig_hist'], use_container_width=True)
+
+    # Save Historical Plot Button
+    if st.button("💾 Save Historical Trend to History", key="save_hist", use_container_width=True):
+        if current_user and res['fig_hist']:
+            add_query_history(
+                user_id=current_user['user_id'],
+                database_name="Forecasting",
+                question=f"Historical trend for {res['comm_u'] or 'all'} in {res['city_u'] or 'all'}",
+                sql_query=f"-- AI Data Preparation\n-- Filter: City='{res['city_u']}', Commodity='{res['comm_u']}'",
+                viz_json=res['fig_hist'].to_json()
+            )
+            st.success("✅ Historical Trend saved to Visualizations history!")
+        else:
+            st.warning("Could not save history. Are you logged in?")
+
+    # Forecast plot
+    st.markdown("### Forecast with 95% Confidence Interval")
+    st.plotly_chart(res['fig'], use_container_width=True)
+
+    # Metrics
+    st.markdown("### Model Performance")
+    cols = st.columns(3)
+    cols[0].metric("MAE (Test)", f"{res['metrics']['MAE']:.2f}")
+    cols[1].metric("RMSE (Test)", f"{res['metrics']['RMSE']:.2f}")
+    cols[2].metric("Training Points", f"{res['metrics']['n_train']:,}")
+
+    # Download
+    st.download_button(
+        label="⬇️ Download Forecast CSV",
+        data=res['csv_data'],
+        file_name=f"forecast_{res['comm_u'] or 'all'}_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv"
+    )
+
+    # Save Forecast Plot button
+    if st.button("💾 Save Forecast to History", key="save_forecast", use_container_width=True):
+        if current_user and res['fig']:
+            add_query_history(
+                user_id=current_user['user_id'],
+                database_name="Forecasting",
+                question=f"Forecast {res['h']} months for {res['comm_u'] or 'all'} in {res['city_u'] or 'all'}",
+                sql_query=f"-- AI Forecast Model: {res['model']}\n-- Horizon: {res['h']} months",
+                viz_json=res['fig'].to_json()
+            )
+            st.success("✅ Forecast chart saved to Visualizations history!")
+        else:
+            st.warning("Could not save history. Are you logged in?")
 
