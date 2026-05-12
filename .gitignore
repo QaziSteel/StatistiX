@@ -16,10 +16,5 @@ Thumbs.db
 # Logs
 *.log
 
-DATA/
-*.db
-*.csv
-
-
 .env
 *.env
