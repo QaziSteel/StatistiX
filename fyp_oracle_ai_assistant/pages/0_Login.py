@@ -256,7 +256,7 @@ with st.sidebar:
     st.markdown("### About")
     st.markdown(
         """
-        **FYP Oracle AI Assistant**
+        **StatistiX AI Assistant**
 
         Advanced natural language querying with AI-powered forecasting
         """
